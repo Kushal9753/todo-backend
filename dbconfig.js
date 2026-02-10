@@ -1,17 +1,21 @@
-
-
 import { MongoClient } from "mongodb";
 
-const url = process.env.MONGO_URI;   // 🔥 CHANGE
+const url = process.env.MONGO_URI;
 const dbName = "node-project";
 
 export const collectionName = "todo";
 
-const client = new MongoClient(url);
+let client;
 
 export const connection = async () => {
-  if (!client.topology?.isConnected()) {
-    await client.connect();
+  try {
+    if (!client) {
+      client = new MongoClient(url);
+      await client.connect();
+      console.log("MongoDB Connected ✅");
+    }
+    return client.db(dbName);
+  } catch (err) {
+    console.log("Mongo Error:", err);
   }
-  return client.db(dbName);
 };
