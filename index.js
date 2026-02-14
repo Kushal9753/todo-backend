@@ -7,24 +7,28 @@ import { collectionName, connection } from "./dbconfig.js";
 import cors from "cors";
 import { ObjectId } from "mongodb";
 import jwt from "jsonwebtoken";
-import cookieParser from "cookie-parser";
 
 const app = express();
 
 app.use(express.json());
-app.use(
-  cors({
-    origin: [
-      "http://localhost:5173",
-      "https://todo-frontend-ruddy-kappa.vercel.app"
-    ],
-    credentials: true,
-  })
-);
+app.use(cors()); // no cookie auth now 😎
 
-app.use(cookieParser());
+// ================= JWT MIDDLEWARE =================
+function verifyJWTToken(req, resp, next) {
+  const authHeader = req.headers.authorization;
 
-console.log("ENV CHECK:", process.env.MONGO_URI);
+  if (!authHeader)
+    return resp.send({ success: false, msg: "No token provided" });
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return resp.send({ success: false, msg: "Invalid token" });
+
+    req.user = decoded; // ⭐️ user info save
+    next();
+  });
+}
 
 // ================= AUTH =================
 
@@ -35,7 +39,8 @@ app.post("/login", async (req, resp) => {
   const db = await connection();
   const user = await db.collection("users").findOne({ email, password });
 
-  if (!user) return resp.send({ success: false, msg: "User not found" });
+  if (!user)
+    return resp.send({ success: false, msg: "User not found" });
 
   const token = jwt.sign(
     { id: user._id, email: user.email },
@@ -43,15 +48,7 @@ app.post("/login", async (req, resp) => {
     { expiresIn: "5d" }
   );
 
-resp.cookie("token", token, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "none",
-  domain: ".onrender.com",   // ⭐️⭐️⭐️ THIS WAS MISSING
-  path: "/",
-});
-
-  resp.send({ success: true });
+  resp.send({ success: true, token });
 });
 
 // SIGNUP
@@ -59,65 +56,67 @@ app.post("/signup", async (req, resp) => {
   const { email, password } = req.body;
 
   const db = await connection();
+
+  const existing = await db.collection("users").findOne({ email });
+  if (existing)
+    return resp.send({ success: false, msg: "User already exists" });
+
   await db.collection("users").insertOne({ email, password });
 
   const token = jwt.sign({ email }, process.env.JWT_SECRET, {
     expiresIn: "5d",
   });
 
- resp.cookie("token", token, {
-  httpOnly: true,
-  sameSite: "none",
-  secure: true,
+  resp.send({ success: true, token });
 });
-
-
-  resp.send({ success: true });
-});
-
-// JWT middleware
-function verifyJWTToken(req, resp, next) {
-  const token = req.cookies.token;
-  if (!token) return resp.send({ success: false, msg: "No token" });
-
-  jwt.verify(token, process.env.JWT_SECRET, (err) => {
-    if (err) return resp.send({ success: false, msg: "Invalid token" });
-    next();
-  });
-}
 
 // ================= TODO =================
 
-// ADD
+// ADD TASK
 app.post("/add-task", verifyJWTToken, async (req, resp) => {
   const db = await connection();
-  await db.collection(collectionName).insertOne(req.body);
+
+  const newTask = {
+    ...req.body,
+    email: req.user.email, // ⭐️ user wise tasks
+  };
+
+  await db.collection(collectionName).insertOne(newTask);
+
   resp.send({ success: true });
 });
 
-// GET
+// GET TASKS (only logged in user)
 app.get("/tasks", verifyJWTToken, async (req, resp) => {
   const db = await connection();
-  const result = await db.collection(collectionName).find().toArray();
+
+  const result = await db
+    .collection(collectionName)
+    .find({ email: req.user.email })
+    .toArray();
+
   resp.send({ success: true, result });
 });
 
 // DELETE ONE
 app.delete("/delete/:id", verifyJWTToken, async (req, resp) => {
   const db = await connection();
-  await db
-    .collection(collectionName)
-    .deleteOne({ _id: new ObjectId(req.params.id) });
+
+  await db.collection(collectionName).deleteOne({
+    _id: new ObjectId(req.params.id),
+    email: req.user.email,
+  });
+
   resp.send({ success: true });
 });
 
 // UPDATE
 app.put("/update-task", verifyJWTToken, async (req, resp) => {
   const { _id, ...fields } = req.body;
-
   const db = await connection();
+
   await db.collection(collectionName).updateOne(
-    { _id: new ObjectId(_id) },
+    { _id: new ObjectId(_id), email: req.user.email },
     { $set: fields }
   );
 
@@ -128,7 +127,12 @@ app.put("/update-task", verifyJWTToken, async (req, resp) => {
 app.delete("/delete-multiple", verifyJWTToken, async (req, resp) => {
   const ids = req.body.map((id) => new ObjectId(id));
   const db = await connection();
-  await db.collection(collectionName).deleteMany({ _id: { $in: ids } });
+
+  await db.collection(collectionName).deleteMany({
+    _id: { $in: ids },
+    email: req.user.email,
+  });
+
   resp.send({ success: true });
 });
 
