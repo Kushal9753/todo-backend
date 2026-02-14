@@ -43,11 +43,13 @@ app.post("/login", async (req, resp) => {
     { expiresIn: "5d" }
   );
 
-  resp.cookie("token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-  });
+resp.cookie("token", token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  domain: ".onrender.com",   // ⭐️⭐️⭐️ THIS WAS MISSING
+  path: "/",
+});
 
   resp.send({ success: true });
 });
