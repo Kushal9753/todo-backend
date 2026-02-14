@@ -59,11 +59,12 @@ app.post("/signup", async (req, resp) => {
     expiresIn: "5d",
   });
 
-  resp.cookie("token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-  });
+ resp.cookie("token", token, {
+  httpOnly: true,
+  sameSite: "none",
+  secure: true,
+});
+
 
   resp.send({ success: true });
 });
