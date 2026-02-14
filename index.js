@@ -14,10 +14,14 @@ const app = express();
 app.use(express.json());
 app.use(
   cors({
-    origin: true,
+    origin: [
+      "http://localhost:5173",
+      "https://todo-frontend-ruddy-kappa.vercel.app"
+    ],
     credentials: true,
   })
 );
+
 app.use(cookieParser());
 
 console.log("ENV CHECK:", process.env.MONGO_URI);
